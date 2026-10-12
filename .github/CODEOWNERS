@@ -1,0 +1,26 @@
+# PLACEHOLDER HANDLES: replace every @member*/@TODO-tech-lead with a real GitHub username
+# BEFORE enabling branch protection. GitHub cannot match unknown users, and with "require
+# CODEOWNER approval" turned on, PRs would be blocked until this file is fixed.
+#
+# TODO(assign): the tech lead is not assigned in the project plan; put their username in place
+# of @TODO-tech-lead below.
+#
+# Roles come from the project plan, Section 10. Last matching line wins.
+
+# Default and shared files: tech lead
+*                           @TODO-tech-lead
+/proto/                     @TODO-tech-lead
+/CLAUDE.md                  @TODO-tech-lead
+/.claude/                   @TODO-tech-lead
+/.github/                   @TODO-tech-lead
+/docs/                      @TODO-tech-lead
+
+# Modules
+/scanner/                   @member1-cpp-scanner
+/bench/                     @member2-cpp-bench
+/classifier/                @member3-py-data @member4-py-model
+/server/                    @member5-java-core @member6-java-rag
+/web/                       @member6-java-rag
+
+# QuantumBank: each member builds their language's part
+/demo/quantumbank/          @member1-cpp-scanner @member2-cpp-bench @member3-py-data @member4-py-model @member5-java-core @member6-java-rag

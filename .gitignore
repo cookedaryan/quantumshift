@@ -1,0 +1,22 @@
+# Secrets and local config
+.env
+.env.*
+!.env.example
+.claude/settings.local.json
+
+# Data and model weights
+data/raw/
+*.pt
+*.safetensors
+*.onnx
+
+# Build output and tooling
+target/
+build/
+venv/
+.venv/
+node_modules/
+__pycache__/
+
+# Scratch file written by the journal workflow
+activity.md

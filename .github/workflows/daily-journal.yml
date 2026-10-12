@@ -1,0 +1,101 @@
+name: daily-journal
+
+on:
+  schedule:
+    - cron: "30 15 * * *"   # 15:30 UTC = 9:00 PM IST, daily journal
+    - cron: "30 15 * * 0"   # Sundays, 9:00 PM IST, weekly summary
+  workflow_dispatch:         # run by hand to test
+    inputs:
+      weekly:
+        description: "Run the weekly summary instead of the daily journal"
+        type: boolean
+        default: false
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+  issues: read
+
+jobs:
+  journal:
+    if: (github.event_name == 'schedule' && github.event.schedule == '30 15 * * *') || (github.event_name == 'workflow_dispatch' && !inputs.weekly)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Collect the last 24 hours
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LOG_ISSUE: "1"   # TODO: number of the pinned "Daily log" issue
+        run: |
+          SINCE=$(date -u -d '24 hours ago' +%Y-%m-%dT%H:%M:%SZ)
+          {
+            echo "## Commits"
+            git log --all --since="$SINCE" --pretty='- %h %an: %s'
+            echo "## Merged PRs"
+            gh pr list --state merged --search "merged:>=$SINCE" --json number,title,author --jq '.[] | "- #\(.number) \(.title) (\(.author.login))"'
+            echo "## Open PRs"
+            gh pr list --state open --json number,title,author,createdAt --jq '.[] | "- #\(.number) \(.title) (\(.author.login)), opened \(.createdAt)"'
+            echo "## Closed issues"
+            gh issue list --state closed --search "closed:>=$SINCE" --json number,title --jq '.[] | "- #\(.number) \(.title)"'
+            echo "## Daily log"
+            gh api "repos/${{ github.repository }}/issues/$LOG_ISSUE/comments?since=$SINCE" --jq '.[] | select(.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR") | "### \(.user.login)\n\(.body)\n"'
+          } > activity.md
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install anthropic
+      - name: Write the journal
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          JOURNAL_MODEL: ${{ vars.JOURNAL_MODEL }}
+        run: python scripts/write_journal.py activity.md
+      - name: Open a PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          D=$(TZ=Asia/Kolkata date +%F)
+          git config user.name "journal-bot"
+          git config user.email "journal-bot@users.noreply.github.com"
+          git checkout -B "journal/$D"
+          git add "docs/journal/$D.md"
+          git commit -m "docs: add journal for $D"
+          git push --force origin "journal/$D"
+          if ! gh pr view "journal/$D" >/dev/null 2>&1; then
+            gh pr create --title "Journal $D" --body "Auto-generated daily journal" --label journal
+          fi
+          gh workflow run ci.yml --ref "journal/$D" || echo "::warning::could not start CI on journal/$D; run it by hand"
+
+  weekly:
+    if: (github.event_name == 'schedule' && github.event.schedule == '30 15 * * 0') || (github.event_name == 'workflow_dispatch' && inputs.weekly)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Collect the last seven daily journals
+        run: |
+          FILES=$(ls docs/journal/2*.md 2>/dev/null | tail -7 || true)
+          if [ -n "$FILES" ]; then cat $FILES > activity.md; else echo "(no journal entries this week)" > activity.md; fi
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install anthropic
+      - name: Write the weekly summary
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          JOURNAL_MODEL: ${{ vars.JOURNAL_MODEL }}
+        run: python scripts/write_journal.py activity.md --weekly
+      - name: Open a PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          D=$(TZ=Asia/Kolkata date +%F)
+          git config user.name "journal-bot"
+          git config user.email "journal-bot@users.noreply.github.com"
+          git checkout -B "weekly/$D"
+          git add "docs/journal/weekly-$D.md"
+          git commit -m "docs: add weekly summary for $D"
+          git push --force origin "weekly/$D"
+          if ! gh pr view "weekly/$D" >/dev/null 2>&1; then
+            gh pr create --title "Weekly summary $D" --body "Auto-generated weekly summary" --label journal
+          fi
+          gh workflow run ci.yml --ref "weekly/$D" || echo "::warning::could not start CI on weekly/$D; run it by hand"

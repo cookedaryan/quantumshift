@@ -1,0 +1,17 @@
+// findings.proto: shared by all three languages (C++, Python, Java).
+// Changing this file changes the contract between services: it needs an ADR (see docs/decisions/).
+syntax = "proto3";
+
+package quantumshift.v1;
+
+option java_package = "com.quantumshift.proto";
+option java_multiple_files = true;
+
+message Finding {
+  string location    = 1;  // file path and line, or binary offset
+  string algorithm   = 2;  // "RSA", "ECDSA-P256", "AES-256" ...
+  string purpose     = 3;  // key_exchange | signature | encryption | hashing
+  bool   vulnerable  = 4;  // breakable by a quantum computer?
+  float  confidence  = 5;  // 0.0 to 1.0
+  string evidence    = 6;  // why we think so
+}

@@ -1,0 +1,75 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  # PRs opened by the journal job use GITHUB_TOKEN, which does not trigger pull_request runs.
+  # The job starts CI on the journal branch with `gh workflow run` so required checks report.
+  workflow_dispatch:
+
+jobs:
+  # Each language job runs only once its folder has a build file, so CI stays green on the
+  # empty skeleton. (hashFiles() cannot be used in a job-level `if`, hence this job.)
+  # A skipped job counts as passing for required status checks.
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      cpp: ${{ steps.find.outputs.cpp }}
+      python: ${{ steps.find.outputs.python }}
+      java: ${{ steps.find.outputs.java }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: find
+        run: |
+          cpp=false; python=false; java=false
+          if [ -f scanner/CMakeLists.txt ] || [ -f bench/CMakeLists.txt ]; then cpp=true; fi
+          if [ -f classifier/pyproject.toml ]; then python=true; fi
+          if [ -f server/pom.xml ]; then java=true; fi
+          echo "cpp=$cpp" >> "$GITHUB_OUTPUT"
+          echo "python=$python" >> "$GITHUB_OUTPUT"
+          echo "java=$java" >> "$GITHUB_OUTPUT"
+
+  cpp:
+    needs: detect
+    if: needs.detect.outputs.cpp == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test each C++ module that has a CMakeLists.txt
+        run: |
+          for m in scanner bench; do
+            if [ -f "$m/CMakeLists.txt" ]; then
+              cmake -S "$m" -B "build/$m"
+              cmake --build "build/$m"
+              ctest --test-dir "build/$m" --output-on-failure
+            fi
+          done
+
+  python:
+    needs: detect
+    if: needs.detect.outputs.python == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e "./classifier[dev]"
+      - run: ruff check .
+        working-directory: classifier
+      - run: pytest -q
+        working-directory: classifier
+
+  java:
+    needs: detect
+    if: needs.detect.outputs.java == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+      - run: ./mvnw verify
+        working-directory: server
